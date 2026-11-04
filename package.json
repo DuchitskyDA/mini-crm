@@ -1,0 +1,13 @@
+{
+  "name": "objects-tasks-crm",
+  "private": true,
+  "description": "Мини-CRM «Объекты и задачи»: скрипты базы данных (миграции, тестовые данные, проверка безопасности)",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:seed": "node scripts/seed.mjs",
+    "db:check": "node scripts/security-check.mjs"
+  }
+}
