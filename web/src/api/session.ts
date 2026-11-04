@@ -4,11 +4,31 @@ export function sessionUserChanged(prevUserId: string | undefined, nextUserId: s
   return prevUserId !== nextUserId
 }
 
-// Данные прошлого пользователя не должны остаться в кэше после выхода или входа другим.
-export function clearCacheOnUserChange(
+type SessionLike = { user: { id: string } } | null
+type AuthLike<S extends SessionLike, E> = {
+  getSession: () => Promise<{ data: { session: S } }>
+  onAuthStateChange: (cb: (event: E, session: S) => void) => {
+    data: { subscription: { unsubscribe: () => void } }
+  }
+}
+
+// Следит за сессией: отдаёт текущую и каждую следующую в onChange, а при выходе или входе
+// другим пользователем очищает кэш данных, чтобы прошлые данные не показались новому.
+// Возвращает отписку.
+export function watchSession<S extends SessionLike, E>(
+  auth: AuthLike<S, E>,
   queryClient: { clear: () => void },
-  prevUserId: string | undefined,
-  nextUserId: string | undefined,
-): void {
-  if (sessionUserChanged(prevUserId, nextUserId)) queryClient.clear()
+  onChange: (session: S) => void,
+): () => void {
+  let userId: string | undefined
+  auth.getSession().then(({ data }) => {
+    userId = data.session?.user.id
+    onChange(data.session)
+  })
+  const { data } = auth.onAuthStateChange((_event, session) => {
+    if (sessionUserChanged(userId, session?.user.id)) queryClient.clear()
+    userId = session?.user.id
+    onChange(session)
+  })
+  return () => data.subscription.unsubscribe()
 }

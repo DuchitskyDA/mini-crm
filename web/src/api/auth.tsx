@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Profile } from '../domain/types'
 import { supabase } from '../lib/supabase'
-import { clearCacheOnUserChange } from './session'
+import { watchSession } from './session'
 
 type AuthState = { session: Session | null; ready: boolean }
 
@@ -13,20 +13,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ session: null, ready: false })
   const queryClient = useQueryClient()
 
-  useEffect(() => {
-    let userId: string | undefined
-    supabase.auth.getSession().then(({ data }) => {
-      userId = data.session?.user.id
-      setState({ session: data.session, ready: true })
-    })
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      // Данные прошлого пользователя не должны остаться в кэше после выхода или смены входа.
-      clearCacheOnUserChange(queryClient, userId, session?.user.id)
-      userId = session?.user.id
-      setState({ session, ready: true })
-    })
-    return () => data.subscription.unsubscribe()
-  }, [queryClient])
+  useEffect(
+    () => watchSession(supabase.auth, queryClient, (session) => setState({ session, ready: true })),
+    [queryClient],
+  )
 
   return <AuthContext.Provider value={state}>{children}</AuthContext.Provider>
 }
