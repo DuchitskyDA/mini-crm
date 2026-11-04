@@ -22,7 +22,7 @@ deploy/                выкладка статики на сервер
 
 ## Запуск
 
-Нужен Node 20.12+ и проект Supabase (подойдёт бесплатный).
+Нужен Node 22+ (скриптам базы хватит 20.12+) и проект Supabase (подойдёт бесплатный).
 
 1. **База.** В Supabase → Authentication → Sign In / Providers выключить «Allow new users to sign up».
    Скопировать `.env.example` в `.env.local` и заполнить. Затем в корне:
