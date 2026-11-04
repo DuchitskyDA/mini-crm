@@ -20,7 +20,8 @@ import type { CrmObject, Profile, Task, TaskHistoryEntry } from '../domain/types
 import { errorText } from '../lib/errors'
 import { useAction } from '../lib/useAction'
 
-type Dialog = { kind: 'edit' } | { kind: 'delete' } | { kind: 'comment'; action: TaskAction }
+// version — updated_at задачи на момент открытия формы правки (оптимистичная блокировка).
+type Dialog = { kind: 'edit'; version: string } | { kind: 'delete' } | { kind: 'comment'; action: TaskAction }
 
 type TaskViewProps = {
   profile: Profile
@@ -33,7 +34,7 @@ type TaskViewProps = {
   error: unknown
   onRetry: () => void
   onChangeStatus: (to: TaskStatus, comment?: string) => Promise<unknown>
-  onUpdate: (input: Partial<TaskInput>) => Promise<unknown>
+  onUpdate: (input: Partial<TaskInput>, version: string) => Promise<unknown>
   onDelete: () => Promise<unknown>
   demo?: { dialog?: Dialog; actionError?: string; dialogError?: string }
 }
@@ -88,7 +89,7 @@ export function TaskView(props: TaskViewProps) {
             {(editable || deletable) && (
               <span className="flex gap-2 sm:ml-auto">
                 {editable && (
-                  <Button size="sm" variant="secondary" disabled={!objects.length} onClick={() => setDialog({ kind: 'edit' })}>
+                  <Button size="sm" variant="secondary" disabled={!objects.length} onClick={() => setDialog({ kind: 'edit', version: task.updated_at })}>
                     Изменить
                   </Button>
                 )}
@@ -142,7 +143,7 @@ export function TaskView(props: TaskViewProps) {
               const input: Partial<TaskInput> = canChangeAssignee(task.status)
                 ? { title, description, object_id, assignee_id }
                 : { title, description, object_id }
-              if (await dialogAction.run(() => props.onUpdate(input))) close()
+              if (await dialogAction.run(() => props.onUpdate(input, dialog.version))) close()
             }}
           />
         </Modal>
@@ -247,7 +248,7 @@ export default function TaskPage() {
         if (objects.error) objects.refetch()
       }}
       onChangeStatus={(to, comment) => change.mutateAsync({ taskId: id, to, comment })}
-      onUpdate={(input) => update.mutateAsync({ id, input })}
+      onUpdate={(input, version) => update.mutateAsync({ id, input, version })}
       onDelete={async () => {
         const objectId = task.data?.object_id
         await del.mutateAsync(id)
