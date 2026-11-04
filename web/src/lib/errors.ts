@@ -10,6 +10,17 @@ export class NoRowsError extends FriendlyError {
   }
 }
 
+// Задачу изменили после открытия формы — сохранение отклонено.
+export class TaskConflictError extends FriendlyError {
+  constructor() {
+    super(TASK_CONFLICT)
+  }
+}
+
+// Правка задачи не прошла: её изменили после открытия формы (другой постановщик или смена статуса).
+export const TASK_CONFLICT =
+  'Задачу уже изменил другой пользователь. Закройте окно — данные обновятся — и внесите правки заново.'
+
 export const OBJECT_HAS_TASKS =
   'У объекта есть задачи — удалить его нельзя. Сначала удалите или перенесите задачи.'
 

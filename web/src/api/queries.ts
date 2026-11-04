@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { TaskStatus } from '../domain/tasks'
 import type { CrmObject, Profile, Task, TaskHistoryEntry } from '../domain/types'
-import { FriendlyError, OBJECT_HAS_TASKS, requireRows } from '../lib/errors'
+import { FriendlyError, OBJECT_HAS_TASKS, TaskConflictError, requireRows } from '../lib/errors'
 import { supabase } from '../lib/supabase'
 import { changeStatusRequest } from './rpc'
 
@@ -170,15 +170,44 @@ export function useCreateTask() {
   })
 }
 
+// Оптимистичная блокировка: сохраняем, только если updated_at задачи тот же, что при открытии формы.
+// Иначе задачу успели изменить (другой постановщик или смена статуса) — 0 строк, ошибка конфликта.
+export async function updateTaskRequest(
+  db: Pick<typeof supabase, 'from'>,
+  id: string,
+  input: Partial<TaskInput>,
+  version: string,
+): Promise<Task> {
+  const { data, error } = await db.from('tasks').update(input).eq('id', id).eq('updated_at', version).select(TASK_FIELDS)
+  if (error) throw error
+  if (!data?.length) throw new TaskConflictError()
+  return data[0] as Task
+}
+
+// Сохранение правки. При конфликте сначала дожидаемся свежей версии задачи и только потом
+// сообщаем об ошибке: тогда закрыть и снова открыть форму можно сразу — она возьмёт новую версию.
+export async function saveTaskEdit(
+  db: Pick<typeof supabase, 'from'>,
+  qc: { refetchQueries: (filters: { queryKey: readonly unknown[] }) => Promise<unknown> },
+  id: string,
+  input: Partial<TaskInput>,
+  version: string,
+): Promise<Task> {
+  try {
+    return await updateTaskRequest(db, id, input, version)
+  } catch (error) {
+    if (error instanceof TaskConflictError) await qc.refetchQueries({ queryKey: keys.task(id) })
+    throw error
+  }
+}
+
 export function useUpdateTask() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, input }: { id: string; input: Partial<TaskInput> }): Promise<Task> => {
-      const { data, error } = await supabase.from('tasks').update(input).eq('id', id).select(TASK_FIELDS)
-      if (error) throw error
-      return requireRows(data)[0] as Task
-    },
-    onSuccess: (task) => invalidateTask(qc, task.id),
+    mutationFn: ({ id, input, version }: { id: string; input: Partial<TaskInput>; version: string }) =>
+      saveTaskEdit(supabase, qc, id, input, version),
+    // И после ошибки: списки и история тоже должны показать актуальное состояние.
+    onSettled: (_data, _error, vars) => invalidateTask(qc, vars.id),
   })
 }
 
