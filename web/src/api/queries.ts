@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { TaskStatus } from '../domain/tasks'
 import type { CrmObject, Profile, Task, TaskHistoryEntry } from '../domain/types'
-import { FriendlyError, OBJECT_HAS_TASKS, TASK_CONFLICT, requireRows } from '../lib/errors'
+import { FriendlyError, OBJECT_HAS_TASKS, TaskConflictError, requireRows } from '../lib/errors'
 import { supabase } from '../lib/supabase'
 import { changeStatusRequest } from './rpc'
 
@@ -180,16 +180,33 @@ export async function updateTaskRequest(
 ): Promise<Task> {
   const { data, error } = await db.from('tasks').update(input).eq('id', id).eq('updated_at', version).select(TASK_FIELDS)
   if (error) throw error
-  if (!data?.length) throw new FriendlyError(TASK_CONFLICT)
+  if (!data?.length) throw new TaskConflictError()
   return data[0] as Task
+}
+
+// Сохранение правки. При конфликте сначала дожидаемся свежей версии задачи и только потом
+// сообщаем об ошибке: тогда закрыть и снова открыть форму можно сразу — она возьмёт новую версию.
+export async function saveTaskEdit(
+  db: Pick<typeof supabase, 'from'>,
+  qc: { refetchQueries: (filters: { queryKey: readonly unknown[] }) => Promise<unknown> },
+  id: string,
+  input: Partial<TaskInput>,
+  version: string,
+): Promise<Task> {
+  try {
+    return await updateTaskRequest(db, id, input, version)
+  } catch (error) {
+    if (error instanceof TaskConflictError) await qc.refetchQueries({ queryKey: keys.task(id) })
+    throw error
+  }
 }
 
 export function useUpdateTask() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, input, version }: { id: string; input: Partial<TaskInput>; version: string }) =>
-      updateTaskRequest(supabase, id, input, version),
-    // И после ошибки: при конфликте карточка должна показать актуальную версию задачи.
+      saveTaskEdit(supabase, qc, id, input, version),
+    // И после ошибки: списки и история тоже должны показать актуальное состояние.
     onSettled: (_data, _error, vars) => invalidateTask(qc, vars.id),
   })
 }

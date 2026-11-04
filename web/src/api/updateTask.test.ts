@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { FriendlyError, TASK_CONFLICT } from '../lib/errors'
-import { updateTaskRequest } from './queries'
+import { keys, saveTaskEdit, updateTaskRequest } from './queries'
 
 function fakeDb(result: { data: unknown[] | null; error: unknown }) {
   const filters: [string, unknown][] = []
@@ -46,5 +46,28 @@ describe('updateTaskRequest — защита от одновременной п�
   it('успех — обновлённая задача', async () => {
     const { db } = fakeDb({ data: [{ id: 't1', title: 'Новое название' }], error: null })
     await expect(updateTaskRequest(db, 't1', input, VERSION)).resolves.toEqual({ id: 't1', title: 'Новое название' })
+  })
+})
+
+describe('saveTaskEdit — после конфликта карточка уже свежая', () => {
+  it('при конфликте сначала дожидается перезапроса задачи, потом сообщает об ошибке', async () => {
+    const { db } = fakeDb({ data: [], error: null })
+    let refetched: unknown = null
+    const qc = {
+      refetchQueries: async (f: { queryKey: unknown }) => {
+        await new Promise((r) => setTimeout(r, 10))
+        refetched = f.queryKey
+      },
+    }
+    const p = saveTaskEdit(db, qc, 't1', input, VERSION)
+    await expect(p).rejects.toThrow(TASK_CONFLICT)
+    expect(refetched).toEqual(keys.task('t1'))
+  })
+
+  it('без конфликта задачу не перезапрашивает', async () => {
+    const { db } = fakeDb({ data: [{ id: 't1' }], error: null })
+    const qc = { refetchQueries: vi.fn(async () => {}) }
+    await saveTaskEdit(db, qc, 't1', input, VERSION)
+    expect(qc.refetchQueries).not.toHaveBeenCalled()
   })
 })
