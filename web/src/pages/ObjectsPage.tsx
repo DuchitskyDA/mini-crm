@@ -47,14 +47,21 @@ export function ObjectsView({ profile, objects, loading, error, onRetry, onSave,
       ) : (
         <ul className="space-y-2">
           {objects.map((o) => (
-            <li key={o.id} className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <li
+              key={o.id}
+              className="relative rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-50/60 hover:shadow-md has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-sky-600"
+            >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <Link to={`/objects/${o.id}`} className="min-w-0 rounded-sm hover:text-sky-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600">
+                {/* Ссылка растянута на всю карточку (after:inset-0): клик в любом месте открывает объект. */}
+                <Link
+                  to={`/objects/${o.id}`}
+                  className="min-w-0 focus-visible:outline-none after:absolute after:inset-0 after:rounded-lg after:content-['']"
+                >
                   <span className="block text-sm font-medium break-words text-slate-900">{o.name}</span>
                   <span className="block text-xs text-slate-500">{o.address}</span>
                 </Link>
                 {isManager && (
-                  <div className="flex shrink-0 gap-2">
+                  <div className="relative z-10 flex shrink-0 gap-2">
                     <Button variant="secondary" size="sm" onClick={() => setDialog({ kind: 'edit', object: o })}>
                       Изменить
                     </Button>

@@ -28,7 +28,7 @@ export function TaskRow({ task, subtitle }: { task: Task; subtitle: string }) {
   return (
     <Link
       to={`/tasks/${task.id}`}
-      className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm hover:border-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600"
+      className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-50/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600"
     >
       <span className="min-w-0">
         <span className="block text-sm font-medium break-words text-slate-900">{task.title}</span>
