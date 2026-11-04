@@ -3,7 +3,7 @@ import type { TaskStatus } from '../domain/tasks'
 import type { CrmObject, Profile, Task, TaskHistoryEntry } from '../domain/types'
 import { FriendlyError, OBJECT_HAS_TASKS, requireRows } from '../lib/errors'
 import { supabase } from '../lib/supabase'
-import { changeStatusCall } from './rpc'
+import { changeStatusRequest } from './rpc'
 
 const TASK_FIELDS = 'id, title, description, object_id, assignee_id, status, author_id, created_at, updated_at'
 
@@ -206,12 +206,8 @@ export function useDeleteTask() {
 export function useChangeStatus() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ taskId, to, comment }: { taskId: string; to: TaskStatus; comment?: string }) => {
-      const [fn, args] = changeStatusCall(taskId, to, comment)
-      const { data, error } = await supabase.rpc(fn, args)
-      if (error) throw error
-      return data as Task
-    },
+    mutationFn: async ({ taskId, to, comment }: { taskId: string; to: TaskStatus; comment?: string }) =>
+      (await changeStatusRequest(supabase, taskId, to, comment)) as Task,
     onSettled: (_data, _error, vars) => invalidateTask(qc, vars.taskId),
   })
 }

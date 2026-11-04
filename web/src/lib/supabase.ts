@@ -7,4 +7,6 @@ export const configError =
   !url || !anonKey ? 'Не заданы VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY (см. web/.env.example)' : null
 
 // Во фронт попадает только URL и anon-ключ; права режет RLS в базе.
-export const supabase = createClient(url ?? 'http://localhost', anonKey ?? 'missing')
+// `||`, а не `??`: пустая строка из .env.example тоже «не задано» — иначе SDK упадёт при импорте
+// и экран configError не покажется.
+export const supabase = createClient(url || 'http://localhost', anonKey || 'missing')
