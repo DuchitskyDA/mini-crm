@@ -39,7 +39,7 @@ describe('availableActions', () => {
   })
 })
 
-describe('правка задачи постановщиком (решения владельца)', () => {
+describe('правка задачи постановщиком (docs/decisions.md)', () => {
   const cases: [TaskStatus, boolean, boolean, boolean][] = [
     // статус, правка полей, смена исполнителя, удаление
     ['new', true, true, true],

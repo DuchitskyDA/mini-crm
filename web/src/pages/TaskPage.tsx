@@ -138,7 +138,7 @@ export function TaskView(props: TaskViewProps) {
             error={dialogAction.error ?? demo?.dialogError}
             onCancel={close}
             onSubmit={async ({ title, description, object_id, assignee_id }) => {
-              // Исполнителя отправляем, только когда его можно менять (решение владельца).
+              // Исполнителя отправляем, только когда его можно менять (docs/decisions.md).
               const input: Partial<TaskInput> = canChangeAssignee(task.status)
                 ? { title, description, object_id, assignee_id }
                 : { title, description, object_id }

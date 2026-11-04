@@ -44,7 +44,7 @@ function actorMatches(by: Transition['by'], role: Role, isAssignee: boolean): bo
   return role === 'executor' && isAssignee
 }
 
-// Правила правки постановщиком — решения владельца 2026-11-04.
+// Правила правки постановщиком — решения там, где ТЗ неоднозначно (docs/decisions.md).
 export function canEditTask(status: TaskStatus): boolean {
   return status !== 'accepted'
 }
