@@ -1,0 +1,19 @@
+# Мини-CRM «Объекты и задачи» (тестовое задание). Только статика собранного фронтенда:
+# данные и правила доступа живут в Supabase, сервер ничего не хранит.
+# Наружу порт не публикуется — до контейнера доходит только core-proxy по сети core-net.
+# Выкладка: deploy/ship.sh в репозитории DuchitskyDA/mini-crm (rsync в /opt/minicrm/dist).
+# Удаление: docker compose -f /opt/minicrm/compose.yaml down, затем блок mini-crm в /opt/core/caddy/Caddyfile.
+services:
+  core-minicrm:
+    image: core-proxy:2.11.4-ca20261020
+    container_name: core-minicrm
+    restart: unless-stopped
+    command: ["caddy", "file-server", "--root", "/srv", "--listen", ":80"]
+    read_only: true
+    volumes:
+      - /opt/minicrm/dist:/srv:ro
+    networks: [core-net]
+    mem_limit: 64m
+networks:
+  core-net:
+    external: true

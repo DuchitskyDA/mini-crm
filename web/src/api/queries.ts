@@ -1,0 +1,213 @@
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import type { TaskStatus } from '../domain/tasks'
+import type { CrmObject, Profile, Task, TaskHistoryEntry } from '../domain/types'
+import { FriendlyError, OBJECT_HAS_TASKS, requireRows } from '../lib/errors'
+import { supabase } from '../lib/supabase'
+import { changeStatusRequest } from './rpc'
+
+const TASK_FIELDS = 'id, title, description, object_id, assignee_id, status, author_id, created_at, updated_at'
+
+export const keys = {
+  profiles: ['profiles'] as const,
+  objects: ['objects'] as const,
+  object: (id: string) => ['object', id] as const,
+  objectTasks: (id: string) => ['tasks', 'object', id] as const,
+  myTasks: (userId: string) => ['tasks', 'mine', userId] as const,
+  task: (id: string) => ['task', id] as const,
+  history: (taskId: string) => ['history', taskId] as const,
+}
+
+// Профили читаются списком и сопоставляются на клиенте: у actor_id истории нет FK,
+// а имена FK задач (assignee, author) — деталь миграций.
+export function useProfiles() {
+  return useQuery({
+    queryKey: keys.profiles,
+    queryFn: async (): Promise<Profile[]> => {
+      const { data, error } = await supabase.from('profiles').select('id, full_name, role').order('full_name')
+      if (error) throw error
+      return data as Profile[]
+    },
+  })
+}
+
+export function useObjects(enabled = true) {
+  return useQuery({
+    queryKey: keys.objects,
+    enabled,
+    queryFn: async (): Promise<CrmObject[]> => {
+      const { data, error } = await supabase.from('objects').select('*').order('name')
+      if (error) throw error
+      return data as CrmObject[]
+    },
+  })
+}
+
+export function useObject(id: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.object(id),
+    enabled,
+    queryFn: async (): Promise<CrmObject | null> => {
+      const { data, error } = await supabase.from('objects').select('*').eq('id', id).maybeSingle()
+      if (error) throw error
+      return data as CrmObject | null
+    },
+  })
+}
+
+// Исполнитель получит только свои задачи объекта — так режет RLS.
+export function useObjectTasks(objectId: string) {
+  return useQuery({
+    queryKey: keys.objectTasks(objectId),
+    queryFn: async (): Promise<Task[]> => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select(TASK_FIELDS)
+        .eq('object_id', objectId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data as Task[]
+    },
+  })
+}
+
+export function useMyTasks(userId: string) {
+  return useQuery({
+    queryKey: keys.myTasks(userId),
+    enabled: !!userId,
+    queryFn: async (): Promise<Task[]> => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select(TASK_FIELDS)
+        .eq('assignee_id', userId)
+        .order('updated_at', { ascending: false })
+      if (error) throw error
+      return data as Task[]
+    },
+  })
+}
+
+export function useTask(id: string) {
+  return useQuery({
+    queryKey: keys.task(id),
+    queryFn: async (): Promise<Task | null> => {
+      const { data, error } = await supabase.from('tasks').select(TASK_FIELDS).eq('id', id).maybeSingle()
+      if (error) throw error
+      return data as Task | null
+    },
+  })
+}
+
+export function useTaskHistory(taskId: string) {
+  return useQuery({
+    queryKey: keys.history(taskId),
+    queryFn: async (): Promise<TaskHistoryEntry[]> => {
+      const { data, error } = await supabase
+        .from('task_history')
+        .select('*')
+        .eq('task_id', taskId)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+      if (error) throw error
+      return data as TaskHistoryEntry[]
+    },
+  })
+}
+
+export type ObjectInput = { name: string; address: string }
+
+export function useSaveObject() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, input }: { id?: string; input: ObjectInput }): Promise<CrmObject> => {
+      const query = id
+        ? supabase.from('objects').update(input).eq('id', id)
+        : supabase.from('objects').insert(input)
+      const { data, error } = await query.select('*')
+      if (error) throw error
+      return requireRows(data)[0] as CrmObject
+    },
+    onSuccess: (obj) => {
+      qc.invalidateQueries({ queryKey: keys.objects })
+      qc.invalidateQueries({ queryKey: keys.object(obj.id) })
+    },
+  })
+}
+
+// Объект с задачами не удаляется (FK RESTRICT → 23503); 0 строк — RLS отсёк удаление.
+export async function deleteObjectRequest(db: Pick<typeof supabase, 'from'>, id: string): Promise<void> {
+  const { data, error } = await db.from('objects').delete().eq('id', id).select('id')
+  if ((error as { code?: string } | null)?.code === '23503') throw new FriendlyError(OBJECT_HAS_TASKS)
+  if (error) throw error
+  requireRows(data)
+}
+
+export function useDeleteObject() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteObjectRequest(supabase, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.objects }),
+  })
+}
+
+// status, author_id, created_at не отправляются: их ставит БД (триггер BEFORE INSERT).
+export type TaskInput = { title: string; description: string; object_id: string; assignee_id: string }
+
+export function invalidateTask(qc: QueryClient, taskId: string) {
+  qc.invalidateQueries({ queryKey: keys.task(taskId) })
+  qc.invalidateQueries({ queryKey: keys.history(taskId) })
+  qc.invalidateQueries({ queryKey: ['tasks'] })
+}
+
+export function useCreateTask() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: TaskInput): Promise<Task> => {
+      const { data, error } = await supabase.from('tasks').insert(input).select(TASK_FIELDS)
+      if (error) throw error
+      return requireRows(data)[0] as Task
+    },
+    onSuccess: (task) => invalidateTask(qc, task.id),
+  })
+}
+
+export function useUpdateTask() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, input }: { id: string; input: Partial<TaskInput> }): Promise<Task> => {
+      const { data, error } = await supabase.from('tasks').update(input).eq('id', id).select(TASK_FIELDS)
+      if (error) throw error
+      return requireRows(data)[0] as Task
+    },
+    onSuccess: (task) => invalidateTask(qc, task.id),
+  })
+}
+
+// Удаление задачи не в «Новая» RLS отсекает молча: 2xx и 0 строк — это отказ, а не успех.
+export async function deleteTaskRequest(db: Pick<typeof supabase, 'from'>, id: string): Promise<void> {
+  const { data, error } = await db.from('tasks').delete().eq('id', id).select('id')
+  if (error) throw error
+  requireRows(data)
+}
+
+export function useDeleteTask() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteTaskRequest(supabase, id),
+    onSuccess: (_data, id) => {
+      // Убираем задачу из списков сразу, чтобы после возврата на объект она не мелькала до перезапроса.
+      qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (list) => list?.filter((t) => t.id !== id))
+      qc.removeQueries({ queryKey: keys.task(id) })
+      invalidateTask(qc, id)
+    },
+  })
+}
+
+// Смена статуса — только через RPC; БД проверяет переход, роль и комментарий.
+export function useChangeStatus() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ taskId, to, comment }: { taskId: string; to: TaskStatus; comment?: string }) =>
+      (await changeStatusRequest(supabase, taskId, to, comment)) as Task,
+    onSettled: (_data, _error, vars) => invalidateTask(qc, vars.taskId),
+  })
+}
